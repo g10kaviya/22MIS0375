@@ -75,6 +75,7 @@ json{
 }
 
 3. Mark Notification as Read
+
 PATCH /api/students/{studentId}/notifications/{notificationId}/read
 Response (200 OK):
 json{
@@ -87,6 +88,7 @@ json{
 }
 
 4. Mark All Notifications as Read
+
 PATCH /api/students/{studentId}/notifications/read-all
 Response (200 OK):
 json{
@@ -97,6 +99,7 @@ json{
 }
 
 5. Get Unread Notification Count
+
 GET /api/students/{studentId}/notifications/unread-count
 Response (200 OK):
 json{
@@ -107,6 +110,7 @@ json{
 }
 
 6. Delete Notification (Admin)
+
 DELETE /api/notifications/{notificationId}
 Response (200 OK):
 json{
@@ -125,6 +129,8 @@ When a student logs in, the client opens a WebSocket connection and joins a room
 When an admin creates a new notification, the server pushes the notification to each targeted student's room via WebSocket.
 If targetAll is true, the server broadcasts to all connected clients.
 If a student is offline (not connected), the notification is still saved in the DB. They will see it when they next fetch notifications via the REST API.
+
+
 
 
 STAGE 2
@@ -185,6 +191,7 @@ FROM students s
 WHERE s.id IN ('student_101', 'student_102');
 
 2. Get Notifications for a Student:
+
 sqlSELECT n.id, n.title, n.message, n.notification_type, 
        sn.is_read, sn.created_at
 FROM student_notifications sn
@@ -194,22 +201,26 @@ ORDER BY sn.created_at DESC
 LIMIT 20 OFFSET 0;
 
 3. Mark as Read:
+
 sqlUPDATE student_notifications
 SET is_read = TRUE, read_at = NOW()
 WHERE student_id = 'student_101' 
   AND notification_id = 'd1';
 
 4. Mark All as Read:
+
 sqlUPDATE student_notifications
 SET is_read = TRUE, read_at = NOW()
 WHERE student_id = 'student_101' AND is_read = FALSE;
 
 5. Get Unread Count:
+
 sqlSELECT COUNT(*) AS unread_count
 FROM student_notifications
 WHERE student_id = 'student_101' AND is_read = FALSE;
 
 6. Delete Notification:
+
 sqlDELETE FROM student_notifications WHERE notification_id = 'd1';
 DELETE FROM notifications WHERE id = 'd1';
 
