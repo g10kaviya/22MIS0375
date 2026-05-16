@@ -325,4 +325,17 @@ No, Database save and email should be decoupled, because:
 DB save is critical — the notification must be persisted. 
 Different failure modes. DB save fails if the database is down (rare). Email fails due to invalid addresses. Coupling them means a transient email failure could delay or complicate the DB write.
 
+STAGE 6
 
+Display the top N most important unread notifications. P
+riority is determined by:
+
+Type weight: Placement (weight 3) > Result (weight 2) > Event (weight 1)
+Recency: Newer notifications rank higher among same-weight items
+
+Since new notifications keep arriving, a max-heap (priority queue) can be used to maintain the top N efficiently:
+
+When a new notification arrives, compute its priority score.
+If the heap has fewer than N items, insert it.
+If the new notification's score is higher than the minimum in the heap, replace the minimum.
+This gives O(log N) insertion and O(1) retrieval of top N.
