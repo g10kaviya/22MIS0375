@@ -15,13 +15,13 @@ REST API Endpoints
 POST /api/notifications
 
 Request Headers:
-json{
+{
   "Authorization": "Bearer <token>",
   "Content-Type": "application/json"
 }
 
 Request Body:
-json{
+{
   "title": "TCS Placement Drive",
   "message": "TCS is visiting campus on 25th May for recruitment.",
   "notificationType": "Placement",
@@ -29,10 +29,8 @@ json{
   "targetAll": false
 }
 
-FieldTypeRequiredDescriptiontitlestringYesNotification titlemessagestringYesNotification bodynotificationTypeenumYesOne of: Placement, Result, EventtargetStudentIdsstring[]NoSpecific students to notify. Ignored if targetAll is truetargetAllbooleanNoIf true, notify all registered students
-
 Response (201 Created):
-json{
+{
   "success": true,
   "data": {
     "notificationId": "d1",
@@ -44,7 +42,7 @@ json{
 }
 
 Error Response (400 Bad Request):
-json{
+{
   "success": false,
   "error": "notificationType must be one of: Placement, Result, Event"
 }
@@ -52,7 +50,7 @@ json{
 2. Get Notifications for a Student
 
 Response (200 OK):
-json{
+{
   "success": true,
   "data": {
     "notifications": [
@@ -78,7 +76,7 @@ json{
 
 PATCH /api/students/{studentId}/notifications/{notificationId}/read
 Response (200 OK):
-json{
+{
   "success": true,
   "data": {
     "id": "d1",
@@ -91,7 +89,7 @@ json{
 
 PATCH /api/students/{studentId}/notifications/read-all
 Response (200 OK):
-json{
+{
   "success": true,
   "data": {
     "updatedCount": 15
@@ -102,7 +100,7 @@ json{
 
 GET /api/students/{studentId}/notifications/unread-count
 Response (200 OK):
-json{
+{
   "success": true,
   "data": {
     "unreadCount": 7
@@ -113,18 +111,22 @@ json{
 
 DELETE /api/notifications/{notificationId}
 Response (200 OK):
-json{
+{
   "success": true,
   "data": {
     "deleted": true
   }
 }
 
+
 Real-Time Notification Mechanism
+
 WebSockets 
+
 When a student is logged in and has the app open, they should receive new notifications instantly without refreshing the page. WebSockets provide a persistent, bidirectional connection between the client and server.
 
 How it works:
+
 When a student logs in, the client opens a WebSocket connection and joins a room identified by their studentId.
 When an admin creates a new notification, the server pushes the notification to each targeted student's room via WebSocket.
 If targetAll is true, the server broadcasts to all connected clients.
@@ -143,7 +145,7 @@ ACID compliance ensures that when a notification is created and sent to 50,000 s
 PostgreSQL supports indexing, partitioning, and JSONB for any future semi-structured data needs.
 
 Database Schema
-sqlCREATE TABLE students (
+CREATE TABLE students (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -192,7 +194,7 @@ WHERE s.id IN ('student_101', 'student_102');
 
 2. Get Notifications for a Student:
 
-sqlSELECT n.id, n.title, n.message, n.notification_type, 
+SELECT n.id, n.title, n.message, n.notification_type, 
        sn.is_read, sn.created_at
 FROM student_notifications sn
 JOIN notifications n ON n.id = sn.notification_id
@@ -202,25 +204,70 @@ LIMIT 20 OFFSET 0;
 
 3. Mark as Read:
 
-sqlUPDATE student_notifications
+UPDATE student_notifications
 SET is_read = TRUE, read_at = NOW()
 WHERE student_id = 'student_101' 
   AND notification_id = 'd1';
 
 4. Mark All as Read:
 
-sqlUPDATE student_notifications
+UPDATE student_notifications
 SET is_read = TRUE, read_at = NOW()
 WHERE student_id = 'student_101' AND is_read = FALSE;
 
 5. Get Unread Count:
 
-sqlSELECT COUNT(*) AS unread_count
+SELECT COUNT(*) AS unread_count
 FROM student_notifications
 WHERE student_id = 'student_101' AND is_read = FALSE;
 
 6. Delete Notification:
 
-sqlDELETE FROM student_notifications WHERE notification_id = 'd1';
+DELETE FROM student_notifications WHERE notification_id = 'd1';
 DELETE FROM notifications WHERE id = 'd1';
 
+STAGE 3
+
+The Query
+
+SELECT * FROM notifications
+WHERE studentID = 1042 AND isRead = false
+ORDER BY createdAt DESC;
+
+The query is not accurate and it is slow.
+
+Wrong table structure is assumed. The studentID and isRead live in student_notifications, not notifications. The query should join both tables or query student_notifications directly.
+SELECT * is wasteful as it fetches all columns including potentially large text fields that may not be needed for a list view.
+Without LIMIT, the query returns every unread notification that could be thousands of rows for an active student.
+Full table scan. Without indexes on studentID and isRead, the database scans every row in the table.
+SELECT * reads all columns from disk, increasing I/O.
+Sorting without index. ORDER BY createdAt DESC requires an in-memory sort of all matching rows (filesort) if there's no index covering the sort order.
+At 5,000,000 notifications, this means scanning millions of rows, reading all their columns, and sorting the result set — all for one request.
+
+The optimized query:
+SELECT n.id, n.title, n.message, n.notification_type, sn.created_at
+FROM student_notifications sn
+JOIN notifications n ON n.id = sn.notification_id
+WHERE sn.student_id = '1042' AND sn.is_read = FALSE
+ORDER BY sn.created_at DESC
+LIMIT 20;
+
+Computation cost improvement: With the composite index (student_id, is_read, created_at DESC), this becomes an index-only range scan — O(log n) to locate the starting point, then sequential read of 20 entries. Without it, it's O(n) full table scan.
+
+A teammate suggesting indexes on every column is not good advice, because:
+
+Write performance degrades. Every INSERT/UPDATE must update all indexes. With 50,000 students getting notifications, this significantly slows writes.
+Storage bloat. Each index consumes disk space. Indexes on rarely-queried columns waste storage.
+Index maintenance overhead. More indexes means slower vacuuming and more lock contention.
+
+The approach: Add indexes only on columns that appear in WHERE, JOIN, and ORDER BY clauses of frequent queries. 
+
+Query: Students who got a placement notification in the last 7 days
+SELECT DISTINCT sn.student_id
+FROM student_notifications sn
+JOIN notifications n ON n.id = sn.notification_id
+WHERE n.notification_type = 'Placement'
+  AND sn.created_at >= NOW() - INTERVAL '7 days';
+
+
+STAGE 4
