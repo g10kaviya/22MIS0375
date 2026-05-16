@@ -4,14 +4,16 @@ Core Actions
 The notification platform should support the following core actions:
 
 Create Notification — Admin/HR creates a new notification (Placement, Result, or Event)
-Fetch Notifications — Students retrieve their notifications (with pagination)
+Fetch Notifications — Students retrieve their notifications
 Mark as Read — Student marks a specific notification as read
 Mark All as Read — Student marks all their notifications as read
 Get Unread Count — Student fetches count of unread notifications
 Delete Notification — Admin removes a notification
 
 REST API Endpoints
+
 1. Create Notification
+
 POST /api/notifications
 
 Request Headers:
@@ -29,7 +31,7 @@ Request Body:
   "targetAll": false
 }
 
-Response (201 Created):
+Response:
 {
   "success": true,
   "data": {
@@ -41,7 +43,7 @@ Response (201 Created):
   }
 }
 
-Error Response (400 Bad Request):
+Error Response:
 {
   "success": false,
   "error": "notificationType must be one of: Placement, Result, Event"
@@ -49,7 +51,7 @@ Error Response (400 Bad Request):
 
 2. Get Notifications for a Student
 
-Response (200 OK):
+Response:
 {
   "success": true,
   "data": {
@@ -75,7 +77,7 @@ Response (200 OK):
 3. Mark Notification as Read
 
 PATCH /api/students/{studentId}/notifications/{notificationId}/read
-Response (200 OK):
+Response:
 {
   "success": true,
   "data": {
@@ -88,7 +90,7 @@ Response (200 OK):
 4. Mark All Notifications as Read
 
 PATCH /api/students/{studentId}/notifications/read-all
-Response (200 OK):
+Response:
 {
   "success": true,
   "data": {
@@ -99,7 +101,7 @@ Response (200 OK):
 5. Get Unread Notification Count
 
 GET /api/students/{studentId}/notifications/unread-count
-Response (200 OK):
+Response:
 {
   "success": true,
   "data": {
@@ -110,7 +112,7 @@ Response (200 OK):
 6. Delete Notification (Admin)
 
 DELETE /api/notifications/{notificationId}
-Response (200 OK):
+Response:
 {
   "success": true,
   "data": {
@@ -145,6 +147,7 @@ ACID compliance ensures that when a notification is created and sent to 50,000 s
 PostgreSQL supports indexing, partitioning, and JSONB for any future semi-structured data needs.
 
 Database Schema
+
 CREATE TABLE students (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -173,6 +176,7 @@ CREATE TABLE student_notifications (
 );
 
 Scaling
+
 As data volume increases (50,000 students × thousands of notifications):
 
 The student_notifications table will grow into hundreds of millions of rows. Solution: Use table partitioning by created_at (e.g., monthly partitions). Old partitions can be archived or dropped.
@@ -245,6 +249,7 @@ Sorting without index. ORDER BY createdAt DESC requires an in-memory sort of all
 At 5,000,000 notifications, this means scanning millions of rows, reading all their columns, and sorting the result set — all for one request.
 
 The optimized query:
+
 SELECT n.id, n.title, n.message, n.notification_type, sn.created_at
 FROM student_notifications sn
 JOIN notifications n ON n.id = sn.notification_id
@@ -252,7 +257,9 @@ WHERE sn.student_id = '1042' AND sn.is_read = FALSE
 ORDER BY sn.created_at DESC
 LIMIT 20;
 
-Computation cost improvement: With the composite index (student_id, is_read, created_at DESC), this becomes an index-only range scan — O(log n) to locate the starting point, then sequential read of 20 entries. Without it, it's O(n) full table scan.
+Computation cost improvement: 
+
+With the composite index (student_id, is_read, created_at DESC), this becomes an index-only range scan — O(log n) to locate the starting point, then sequential read of 20 entries. Without it, it's O(n) full table scan.
 
 A teammate suggesting indexes on every column is not good advice, because:
 
@@ -260,7 +267,9 @@ Write performance degrades. Every INSERT/UPDATE must update all indexes. With 50
 Storage bloat. Each index consumes disk space. Indexes on rarely-queried columns waste storage.
 Index maintenance overhead. More indexes means slower vacuuming and more lock contention.
 
-The approach: Add indexes only on columns that appear in WHERE, JOIN, and ORDER BY clauses of frequent queries. 
+The approach: 
+
+Add indexes only on columns that appear in WHERE, JOIN, and ORDER BY clauses of frequent queries. 
 
 Query: Students who got a placement notification in the last 7 days
 SELECT DISTINCT sn.student_id
@@ -271,3 +280,19 @@ WHERE n.notification_type = 'Placement'
 
 
 STAGE 4
+
+Notifications are fetched on every page load for every student. With 50,000 students, the DB is overwhelmed with repeated identical queries.
+
+Materialized/Precomputed Unread Lists
+
+How it works: 
+
+Maintain a precomputed list of each student's top N unread notifications in a dedicated table or Redis sorted set. Update it asynchronously when notifications arrive.
+
+Tradeoffs:
+
+Pros: Page loads require a single simple lookup — no joins, no sorting. Predictable performance regardless of total notification count.
+Cons: More complex to maintain. Requires background workers to keep lists in sync. Storage duplication.
+
+STAGE 5
+
