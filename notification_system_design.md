@@ -49,7 +49,7 @@ json{
   "error": "notificationType must be one of: Placement, Result, Event"
 }
 
-3. Get Notifications for a Student
+2. Get Notifications for a Student
 GET /api/students/{studentId}/notifications?page=1&limit=20&type=Placement&isRead=false
 Query Parameters:
 ParameterTypeDefaultDescriptionpageinteger1Page numberlimitinteger20Items per pagetypestring(all)Filter by notification typeisReadboolean(all)Filter by read status
@@ -76,7 +76,7 @@ json{
   }
 }
 
-4. Mark Notification as Read
+3. Mark Notification as Read
 PATCH /api/students/{studentId}/notifications/{notificationId}/read
 Response (200 OK):
 json{
@@ -88,7 +88,7 @@ json{
   }
 }
 
-5. Mark All Notifications as Read
+4. Mark All Notifications as Read
 PATCH /api/students/{studentId}/notifications/read-all
 Response (200 OK):
 json{
@@ -98,7 +98,7 @@ json{
   }
 }
 
-6. Get Unread Notification Count
+5. Get Unread Notification Count
 GET /api/students/{studentId}/notifications/unread-count
 Response (200 OK):
 json{
@@ -108,7 +108,7 @@ json{
   }
 }
 
-7. Delete Notification (Admin)
+6. Delete Notification (Admin)
 DELETE /api/notifications/{notificationId}
 Response (200 OK):
 json{
