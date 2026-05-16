@@ -17,12 +17,14 @@ REST API Endpoints
 POST /api/notifications
 
 Request Headers:
+
 {
   "Authorization": "Bearer <token>",
   "Content-Type": "application/json"
 }
 
 Request Body:
+
 {
   "title": "TCS Placement Drive",
   "message": "TCS is visiting campus on 25th May for recruitment.",
@@ -32,6 +34,7 @@ Request Body:
 }
 
 Response:
+
 {
   "success": true,
   "data": {
@@ -44,6 +47,7 @@ Response:
 }
 
 Error Response:
+
 {
   "success": false,
   "error": "notificationType must be one of: Placement, Result, Event"
@@ -52,6 +56,7 @@ Error Response:
 2. Get Notifications for a Student
 
 Response:
+
 {
   "success": true,
   "data": {
@@ -77,7 +82,9 @@ Response:
 3. Mark Notification as Read
 
 PATCH /api/students/{studentId}/notifications/{notificationId}/read
+
 Response:
+
 {
   "success": true,
   "data": {
@@ -90,7 +97,9 @@ Response:
 4. Mark All Notifications as Read
 
 PATCH /api/students/{studentId}/notifications/read-all
+
 Response:
+
 {
   "success": true,
   "data": {
@@ -101,7 +110,9 @@ Response:
 5. Get Unread Notification Count
 
 GET /api/students/{studentId}/notifications/unread-count
+
 Response:
+
 {
   "success": true,
   "data": {
@@ -112,7 +123,9 @@ Response:
 6. Delete Notification (Admin)
 
 DELETE /api/notifications/{notificationId}
+
 Response:
+
 {
   "success": true,
   "data": {
@@ -242,11 +255,7 @@ The query is not accurate and it is slow.
 
 Wrong table structure is assumed. The studentID and isRead live in student_notifications, not notifications. The query should join both tables or query student_notifications directly.
 SELECT * is wasteful as it fetches all columns including potentially large text fields that may not be needed for a list view.
-Without LIMIT, the query returns every unread notification that could be thousands of rows for an active student.
-Full table scan. Without indexes on studentID and isRead, the database scans every row in the table.
-SELECT * reads all columns from disk, increasing I/O.
 Sorting without index. ORDER BY createdAt DESC requires an in-memory sort of all matching rows (filesort) if there's no index covering the sort order.
-At 5,000,000 notifications, this means scanning millions of rows, reading all their columns, and sorting the result set — all for one request.
 
 The optimized query:
 
@@ -272,6 +281,7 @@ The approach:
 Add indexes only on columns that appear in WHERE, JOIN, and ORDER BY clauses of frequent queries. 
 
 Query: Students who got a placement notification in the last 7 days
+
 SELECT DISTINCT sn.student_id
 FROM student_notifications sn
 JOIN notifications n ON n.id = sn.notification_id
@@ -295,4 +305,24 @@ Pros: Page loads require a single simple lookup — no joins, no sorting. Predic
 Cons: More complex to maintain. Requires background workers to keep lists in sync. Storage duplication.
 
 STAGE 5
+
+The Original Pseudocode
+
+function notify_all(student_ids: array, message: string):
+    for student_id in student_ids:
+        send_email(student_id, message)
+        save_to_db(student_id, message)
+        push_to_app(student_id, message)
+
+
+Shortcomings
+
+No error handling or retry. If send_email fails for student 200, the loop continues — but there's no record of the failure, no retry mechanism, and no way to resume.
+Partial failure is invisible. The logs show the email failed for 200 students midway, but the system doesn't track which 200 failed or retry them.
+
+No, Database save and email should be decoupled, because:
+
+DB save is critical — the notification must be persisted. 
+Different failure modes. DB save fails if the database is down (rare). Email fails due to invalid addresses. Coupling them means a transient email failure could delay or complicate the DB write.
+
 
